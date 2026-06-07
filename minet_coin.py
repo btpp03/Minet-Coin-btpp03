@@ -11,7 +11,7 @@ MINET_SID = os.environ.get("MINET_SID", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
-PROXY = os.environ.get("PROXY", "")  # 代理: "http://ip:port" 或 "socks5://ip:port"
+PROXY = os.environ.get("PROXY", "")
 
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: return
@@ -25,23 +25,43 @@ def login(sb, sid):
     """UC mode with US proxy"""
     print(f"[login] Opening minet.vn with UC mode...")
     if PROXY:
-        print(f"[login] Using proxy: {PROXY}")
+        print(f"[login] Using proxy: ***")
     
-    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=12)
-    time.sleep(3)
+    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=15)
+    time.sleep(5)  # 多等几秒
     
     url = sb.driver.current_url
-    print(f"[login] URL: {url[:60]}")
+    print(f"[login] URL: {url[:80]}")
     
     # 检查 Cloudflare
     body = sb.get_text("body")[:200]
+    print(f"[login] Body preview: {body[:100]}")
     if "Just a moment" in body:
         print("[login] Cloudflare challenge...")
         sb.uc_gui_click_captcha()
-        time.sleep(5)
+        time.sleep(8)
+    
+    # 等页面完全加载
+    print("[login] Waiting for page to fully load...")
+    time.sleep(3)
+    
+    # 检查当前域名
+    current_url = sb.driver.current_url
+    print(f"[login] Current URL before cookie: {current_url[:80]}")
     
     print("[login] Setting cookie...")
-    sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
+    try:
+        sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
+        print("[login] Cookie set OK!")
+    except Exception as e:
+        print(f"[login] Cookie error: {e}")
+        # 尝试不指定 domain
+        try:
+            sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/"})
+            print("[login] Cookie set without domain OK!")
+        except Exception as e2:
+            print(f"[login] Cookie error without domain: {e2}")
+            return False
     
     # 刷新页面
     print("[login] Refreshing page...")
@@ -49,7 +69,7 @@ def login(sb, sid):
     time.sleep(5)
     
     url = sb.driver.current_url
-    print(f"[login] After refresh: {url[:60]}")
+    print(f"[login] After refresh: {url[:80]}")
     
     # 打印页面内容
     body_text = sb.get_text("body")[:500]
@@ -88,11 +108,6 @@ def watch_ad(sb, idx):
             time.sleep(3)
         else:
             print(f"[ad {idx}] Button not found")
-            # 列出所有按钮
-            btns = sb.find_elements("button")
-            print(f"[ad {idx}] 找到 {len(btns)} 个按钮:")
-            for b in btns[:10]:
-                print(f"  - {b.get_attribute('id')}: {b.text[:30]}")
             return False
         
         # 等广告完成
@@ -122,7 +137,6 @@ def run():
         print("ERROR: MINET_SID not set"); return 0
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
     
-    # 构建 SB 参数
     sb_args = {
         "uc": True,
         "headless": True,
