@@ -18,7 +18,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --no-cache-dir seleniumbase
+          pip install --no-cache-dir -r requirements.txt
 
       - name: Run (xvfb)
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python minet_coin.py
