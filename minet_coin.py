@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - 极度精简模式 + Chrome 内存优化
+Minet.vn Auto Coin - UC mode + 直接在主页操作
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -20,35 +20,14 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def block_heavy_resources(sb):
-    """屏蔽所有非必要资源"""
-    try:
-        sb.driver.execute_cdp_cmd("Network.enable", {})
-        sb.driver.execute_cdp_cmd("Network.setBlockedURLs", {
-            "urls": [
-                "*googleads*", "*doubleclick*", "*googlesyndication*",
-                "*adservice.google*", "*fundingchoicesmessages*",
-                "*taboola*", "*criteo*", "*ad.turn.com*",
-                "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.svg",
-                "*.woff", "*.woff2", "*.ttf", "*.otf",
-                "*.mp4", "*.webm", "*.avi",
-                "*analytics*", "*track*", "*pixel*",
-            ]
-        })
-        print("[resources] ✅ 非必要资源已屏蔽")
-    except Exception as e:
-        print(f"[resources] ⚠️ 屏蔽失败: {e}")
-
 def login(sb, sid):
-    """UC mode with memory optimization"""
-    print("[login] Opening minet.vn with UC mode (memory optimized)...")
-    
-    # 使用 uc_open_with_reconnect 但添加内存优化参数
+    """UC mode: open page, solve Cloudflare, set cookie"""
+    print("[login] Opening minet.vn with UC mode...")
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=12)
     time.sleep(3)
     
     url = sb.driver.current_url
-    print(f"[login] Initial URL: {url[:60]}")
+    print(f"[login] URL: {url[:60]}")
     
     # 检查 Cloudflare
     body = sb.get_text("body")[:200]
@@ -57,45 +36,16 @@ def login(sb, sid):
         sb.uc_gui_click_captcha()
         time.sleep(5)
     
-    # 屏蔽非必要资源
-    block_heavy_resources(sb)
-    
-    # 额外的内存优化 - 禁用页面上所有非必要脚本
-    try:
-        sb.execute_script("""
-            // 停止所有正在加载的脚本
-            window.stop();
-            // 禁用所有 setTimeout/setInterval
-            window._origSetTimeout = window.setTimeout;
-            window.setTimeout = function() { return 0; };
-            window._origSetInterval = window.setInterval;
-            window.setInterval = function() { return 0; };
-            // 禁用所有 addEventListener
-            window._origAddEventListener = window.addEventListener;
-            window.addEventListener = function() { return; };
-        """)
-        print("[login] ✅ JavaScript 已优化")
-    except:
-        pass
-    
     print("[login] Setting cookie...")
     sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
     
-    # 用 JavaScript 直接修改页面内容，减少内存占用
-    try:
-        sb.execute_script("""
-            // 清空页面内容
-            document.body.innerHTML = '<div id="app">Loading...</div>';
-        """)
-    except:
-        pass
-    
-    print("[login] Opening earn page...")
-    sb.open(f"{MINET_BASE}/earn")
+    # 用 JavaScript 刷新页面（不换 URL）
+    print("[login] Refreshing page with cookie...")
+    sb.execute_script("location.reload();")
     time.sleep(5)
     
     url = sb.driver.current_url
-    print(f"[login] Earn URL: {url[:60]}")
+    print(f"[login] After refresh URL: {url[:60]}")
     
     if "login" not in url.lower():
         print("[login] ✅ OK!")
@@ -113,12 +63,18 @@ def get_balance(sb):
 def watch_ad(sb, idx):
     print(f"[ad {idx}] Looking for button...")
     try:
+        # 直接找 button#link4mBtn
         btn = sb.find_element("#link4mBtn")
         if btn:
-            print(f"[ad {idx}] Clicking #link4mBtn...")
+            print(f"[ad {idx}] Found button: {btn.text}")
             btn.click()
             time.sleep(3)
+        else:
+            print(f"[ad {idx}] Button not found, trying JavaScript...")
+            sb.execute_script("document.querySelector('#link4mBtn').click();")
+            time.sleep(3)
         
+        # 等广告完成
         print(f"[ad {idx}] Waiting for ad...")
         for i in range(90):
             time.sleep(1)
