@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - Watch ads and claim rewards
-UC mode + ad blocking to reduce memory usage
+Minet.vn Auto Coin - 极度精简模式
+UC mode + 禁用所有非必要资源
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -13,21 +13,6 @@ MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
 
-# 广告域名黑名单
-AD_DOMAINS = [
-    "googleads.g.doubleclick.net",
-    "pagead2.googlesyndication.com",
-    "adservice.google.com",
-    "www.googletagmanager.com",
-    "ad.doubleclick.net",
-    "ad.turn.com",
-    "cdn.taboola.com",
-    "static.criteo.net",
-    "cdn-vitals.com",
-    "analytics.ocean.io",
-    "fundingchoicesmessages.google.com",
-]
-
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: return
     try:
@@ -36,19 +21,29 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def block_ads(sb):
-    """使用 Chrome DevTools Protocol 屏蔽广告资源"""
+def block_heavy_resources(sb):
+    """屏蔽所有非必要资源"""
     try:
-        # 启用 Network 域
         sb.driver.execute_cdp_cmd("Network.enable", {})
-        
-        # 设置请求拦截
         sb.driver.execute_cdp_cmd("Network.setBlockedURLs", {
-            "urls": AD_DOMAINS
+            "urls": [
+                # 广告
+                "*googleads*", "*doubleclick*", "*googlesyndication*",
+                "*adservice.google*", "*fundingchoicesmessages*",
+                "*taboola*", "*criteo*", "*ad.turn.com*",
+                # 图片
+                "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.svg",
+                # 字体
+                "*.woff", "*.woff2", "*.ttf", "*.otf",
+                # 视频
+                "*.mp4", "*.webm", "*.avi",
+                # 分析
+                "*analytics*", "*track*", "*pixel*",
+            ]
         })
-        print("[ads] ✅ 广告已屏蔽")
+        print("[resources] ✅ 非必要资源已屏蔽")
     except Exception as e:
-        print(f"[ads] ⚠️ 屏蔽失败: {e}")
+        print(f"[resources] ⚠️ 屏蔽失败: {e}")
 
 def login(sb, sid):
     """UC mode: open page first, solve Cloudflare, then set cookie"""
@@ -66,13 +61,21 @@ def login(sb, sid):
         sb.uc_gui_click_captcha()
         time.sleep(5)
     
-    # 屏蔽广告
-    block_ads(sb)
+    # 屏蔽非必要资源
+    block_heavy_resources(sb)
     
     print("[login] Setting cookie...")
     sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
     
-    print("[login] Opening earn page...")
+    print("[login] Opening earn page (lightweight)...")
+    # 用 JavaScript 禁用更多资源
+    sb.execute_script("""
+        // 禁用图片加载
+        document.querySelectorAll('img').forEach(img => img.src = '');
+        // 禁用 iframe
+        document.querySelectorAll('iframe').forEach(iframe => iframe.src = 'about:blank');
+    """)
+    
     sb.open(f"{MINET_BASE}/earn")
     time.sleep(5)
     
@@ -101,7 +104,6 @@ def watch_ad(sb, idx):
             btn.click()
             time.sleep(3)
         
-        # 等广告完成
         print(f"[ad {idx}] Waiting for ad...")
         for i in range(90):
             time.sleep(1)
