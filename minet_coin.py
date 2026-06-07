@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + 直接在主页操作
+Minet.vn Auto Coin - UC mode + JS navigation
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -39,13 +39,13 @@ def login(sb, sid):
     print("[login] Setting cookie...")
     sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
     
-    # 用 JavaScript 刷新页面（不换 URL）
-    print("[login] Refreshing page with cookie...")
+    # 刷新页面
+    print("[login] Refreshing page...")
     sb.execute_script("location.reload();")
     time.sleep(5)
     
     url = sb.driver.current_url
-    print(f"[login] After refresh URL: {url[:60]}")
+    print(f"[login] After refresh: {url[:60]}")
     
     if "login" not in url.lower():
         print("[login] ✅ OK!")
@@ -63,16 +63,27 @@ def get_balance(sb):
 def watch_ad(sb, idx):
     print(f"[ad {idx}] Looking for button...")
     try:
-        # 直接找 button#link4mBtn
+        # 先尝试直接找按钮
         btn = sb.find_element("#link4mBtn")
         if btn:
             print(f"[ad {idx}] Found button: {btn.text}")
             btn.click()
             time.sleep(3)
         else:
-            print(f"[ad {idx}] Button not found, trying JavaScript...")
-            sb.execute_script("document.querySelector('#link4mBtn').click();")
-            time.sleep(3)
+            # 用 JS 导航到 earn 页面
+            print(f"[ad {idx}] Button not found, navigating to /earn with JS...")
+            sb.execute_script("window.location.href = '/earn';")
+            time.sleep(5)
+            
+            # 再找一次
+            btn = sb.find_element("#link4mBtn")
+            if btn:
+                print(f"[ad {idx}] Found button after navigation: {btn.text}")
+                btn.click()
+                time.sleep(3)
+            else:
+                print(f"[ad {idx}] Button still not found")
+                return False
         
         # 等广告完成
         print(f"[ad {idx}] Waiting for ad...")
