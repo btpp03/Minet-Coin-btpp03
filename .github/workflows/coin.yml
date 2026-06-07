@@ -1,0 +1,30 @@
+name: Minet Auto Coin
+on:
+  schedule:
+    - cron: '22 0 * * *'  # 00:22 UTC = 08:22 北京时间
+  workflow_dispatch:
+
+jobs:
+  earn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install --no-cache-dir seleniumbase
+
+      - name: Run (xvfb)
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python minet_coin.py
+        env:
+          MINET_SID: ${{ secrets.MINET_SID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          MAX_ADS: '20'
+          ACCOUNT_NAME: 'btpp03'
