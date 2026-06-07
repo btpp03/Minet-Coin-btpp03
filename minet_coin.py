@@ -8,6 +8,7 @@ from seleniumbase import SB
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
 MINET_SID = os.environ.get("MINET_SID", "")
+CF_CLEARANCE = os.environ.get("CF_CLEARANCE", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
@@ -20,11 +21,13 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def login_cookie(sb, sid):
-    print("[login] Setting cookie...")
+def login_cookie(sb, sid, cf_clearance):
+    print("[login] Setting cookies...")
     sb.open(MINET_BASE)
     time.sleep(2)
     sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
+    if cf_clearance:
+        sb.driver.add_cookie({"name": "cf_clearance", "value": cf_clearance, "path": "/", "domain": "dashboard.minet.vn"})
     sb.open(f"{MINET_BASE}/earn")
     time.sleep(3)
     url = sb.driver.current_url
@@ -83,7 +86,7 @@ def run():
         print("ERROR: MINET_SID not set"); return 0
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
     with SB(uc=True, headless=True, locale_code="en") as sb:
-        if not login_cookie(sb, MINET_SID):
+        if not login_cookie(sb, MINET_SID, CF_CLEARANCE):
             notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
             return 0
         initial = get_balance(sb)
