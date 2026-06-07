@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - 极度精简模式
-UC mode + 禁用所有非必要资源
+Minet.vn Auto Coin - 极度精简模式 + Chrome 内存优化
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -27,17 +26,12 @@ def block_heavy_resources(sb):
         sb.driver.execute_cdp_cmd("Network.enable", {})
         sb.driver.execute_cdp_cmd("Network.setBlockedURLs", {
             "urls": [
-                # 广告
                 "*googleads*", "*doubleclick*", "*googlesyndication*",
                 "*adservice.google*", "*fundingchoicesmessages*",
                 "*taboola*", "*criteo*", "*ad.turn.com*",
-                # 图片
                 "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.svg",
-                # 字体
                 "*.woff", "*.woff2", "*.ttf", "*.otf",
-                # 视频
                 "*.mp4", "*.webm", "*.avi",
-                # 分析
                 "*analytics*", "*track*", "*pixel*",
             ]
         })
@@ -46,8 +40,10 @@ def block_heavy_resources(sb):
         print(f"[resources] ⚠️ 屏蔽失败: {e}")
 
 def login(sb, sid):
-    """UC mode: open page first, solve Cloudflare, then set cookie"""
-    print("[login] Opening minet.vn with UC mode...")
+    """UC mode with memory optimization"""
+    print("[login] Opening minet.vn with UC mode (memory optimized)...")
+    
+    # 使用 uc_open_with_reconnect 但添加内存优化参数
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=12)
     time.sleep(3)
     
@@ -64,18 +60,37 @@ def login(sb, sid):
     # 屏蔽非必要资源
     block_heavy_resources(sb)
     
+    # 额外的内存优化 - 禁用页面上所有非必要脚本
+    try:
+        sb.execute_script("""
+            // 停止所有正在加载的脚本
+            window.stop();
+            // 禁用所有 setTimeout/setInterval
+            window._origSetTimeout = window.setTimeout;
+            window.setTimeout = function() { return 0; };
+            window._origSetInterval = window.setInterval;
+            window.setInterval = function() { return 0; };
+            // 禁用所有 addEventListener
+            window._origAddEventListener = window.addEventListener;
+            window.addEventListener = function() { return; };
+        """)
+        print("[login] ✅ JavaScript 已优化")
+    except:
+        pass
+    
     print("[login] Setting cookie...")
     sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
     
-    print("[login] Opening earn page (lightweight)...")
-    # 用 JavaScript 禁用更多资源
-    sb.execute_script("""
-        // 禁用图片加载
-        document.querySelectorAll('img').forEach(img => img.src = '');
-        // 禁用 iframe
-        document.querySelectorAll('iframe').forEach(iframe => iframe.src = 'about:blank');
-    """)
+    # 用 JavaScript 直接修改页面内容，减少内存占用
+    try:
+        sb.execute_script("""
+            // 清空页面内容
+            document.body.innerHTML = '<div id="app">Loading...</div>';
+        """)
+    except:
+        pass
     
+    print("[login] Opening earn page...")
     sb.open(f"{MINET_BASE}/earn")
     time.sleep(5)
     
