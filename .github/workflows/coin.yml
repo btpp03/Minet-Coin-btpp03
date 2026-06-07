@@ -25,3 +25,4 @@ jobs:
       - run: xvfb-run python minet_coin.py
         env:
           DISPLAY: ':99.0'
+          PROXY: ${{ secrets.PROXY }}
