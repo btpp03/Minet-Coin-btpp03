@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + Discord OAuth
-策略: 先不用代理过CF，登录后再用代理刷广告
+Minet.vn Auto Coin - UC mode + Discord OAuth + cf_clearance
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -9,6 +8,7 @@ from seleniumbase import SB
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
+CF_CLEARANCE = os.environ.get("CF_CLEARANCE", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
@@ -22,55 +22,44 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def wait_cf(sb, max_wait=60):
-    """等待 Cloudflare 完成"""
-    for i in range(max_wait // 2):
-        time.sleep(2)
-        body = sb.get_text("body")[:300]
-        if "security verification" not in body.lower() and \
-           "checking" not in body.lower() and \
-           "just a moment" not in body.lower() and \
-           "waiting for" not in body.lower():
-            print(f"[CF] ✅ Passed!")
-            return True
-        if i % 5 == 0:
-            print(f"[CF] Waiting... ({i*2}s)")
-    return False
-
 def login(sb):
-    """先不用代理过CF，登录后cookie带入"""
-    print(f"[login] Opening minet.vn (no proxy for CF)...")
+    """使用 cf_clearance + Discord token"""
+    print(f"[login] Opening minet.vn...")
     
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
+    time.sleep(5)
+    
+    # 设置 cf_clearance cookie
+    if CF_CLEARANCE:
+        print("[login] Setting cf_clearance...")
+        try:
+            sb.driver.add_cookie({
+                "name": "cf_clearance",
+                "value": CF_CLEARANCE,
+                "path": "/",
+                "domain": ".minet.vn"
+            })
+            print("[login] cf_clearance set!")
+        except Exception as e:
+            print(f"[login] cf_clearance error: {e}")
+    
+    # 刷新页面
+    print("[login] Refreshing...")
+    sb.execute_script("location.reload();")
     time.sleep(10)
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
-    
-    body = sb.get_text("body")[:300]
-    print(f"[login] Body: {body[:150]}")
-    
-    # 过 CF
-    if "Just a moment" in body or "checking" in body.lower() or "security verification" in body.lower():
-        print("[login] Cloudflare detected, solving...")
-        sb.uc_gui_click_captcha()
-        time.sleep(10)
-    
-    if not wait_cf(sb):
-        print("[login] CF timeout, trying reload...")
-        sb.execute_script("location.reload();")
-        time.sleep(10)
-        sb.uc_gui_click_captcha()
-        time.sleep(10)
-        if not wait_cf(sb):
-            print("[login] ❌ CF still blocking")
-            return False
-    
-    time.sleep(5)
-    url = sb.driver.current_url
-    print(f"[login] URL after CF: {url[:80]}")
     body_text = sb.get_text("body")[:500]
     print(f"[login] Page: {body_text[:200]}")
+    
+    # 检查是否过 CF
+    if "security verification" in body_text.lower() or "just a moment" in body_text.lower():
+        print("[login] Still on CF page, trying UC click...")
+        sb.uc_gui_click_captcha()
+        time.sleep(10)
+        body_text = sb.get_text("body")[:500]
+        print(f"[login] After UC click: {body_text[:200]}")
     
     # 点 Discord 登录
     print("[login] Looking for Discord login...")
@@ -136,14 +125,18 @@ def watch_ad(sb, idx):
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
         
-        if not wait_cf(sb):
-            print(f"[ad {idx}] CF timeout")
-            return False
-        
-        time.sleep(3)
+        # 等页面加载
+        time.sleep(10)
         
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page: {body_text[:200]}")
+        
+        if "security verification" in body_text.lower():
+            print(f"[ad {idx}] CF blocking, trying UC click...")
+            sb.uc_gui_click_captcha()
+            time.sleep(10)
+            body_text = sb.get_text("body")[:500]
+            print(f"[ad {idx}] After UC: {body_text[:200]}")
         
         btn = sb.find_element("#link4mBtn")
         if btn:
@@ -178,37 +171,20 @@ def watch_ad(sb, idx):
 def run():
     if not DISCORD_TOKEN:
         print("ERROR: DISCORD_TOKEN not set"); return 0
+    if not CF_CLEARANCE:
+        print("WARNING: CF_CLEARANCE not set, may fail")
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
     
-    # 第一阶段: 不用代理过CF + 登录
-    with SB(uc=True, headless=True, locale_code="en") as sb:
-        if not login(sb):
-            notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
-            return 0
-        initial = get_balance(sb)
-        print(f"Balance: {initial} coins")
-        
-        # 获取 cookies
-        cookies = sb.driver.get_cookies()
-        print(f"[login] Got {len(cookies)} cookies")
-    
-    # 第二阶段: 用代理刷广告
-    print(f"\n[ads] Starting ad watching with proxy...")
     sb_args = {"uc": True, "headless": True, "locale_code": "en"}
     if PROXY:
         sb_args["proxy"] = PROXY
     
     with SB(**sb_args) as sb:
-        # 设置 cookies
-        sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
-        time.sleep(5)
-        for c in cookies:
-            try:
-                sb.driver.add_cookie(c)
-            except:
-                pass
-        sb.execute_script("location.reload();")
-        time.sleep(5)
+        if not login(sb):
+            notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
+            return 0
+        initial = get_balance(sb)
+        print(f"Balance: {initial} coins")
         
         earned = 0
         for i in range(1, MAX_ADS+1):
