@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Minet.vn Auto Coin - UC mode + Discord OAuth + cf_clearance
+不用 uc_gui_click_captcha（headless 不支持 PyAutoGUI）
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -21,6 +22,21 @@ def notify(text):
         data = json.dumps({"chat_id": TG_CHAT_ID, "text": text}).encode()
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
+
+def wait_cf(sb, max_wait=60):
+    """等待 Cloudflare 完成（不调用 PyAutoGUI）"""
+    for i in range(max_wait // 2):
+        time.sleep(2)
+        body = sb.get_text("body")[:300].lower()
+        if "security verification" not in body and \
+           "checking" not in body and \
+           "just a moment" not in body and \
+           "waiting for" not in body:
+            print(f"[CF] ✅ Passed!")
+            return True
+        if i % 5 == 0:
+            print(f"[CF] Waiting... ({i*2}s)")
+    return False
 
 def login(sb):
     """使用 cf_clearance + Discord token"""
@@ -51,15 +67,16 @@ def login(sb):
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
     body_text = sb.get_text("body")[:500]
-    print(f"[login] Page: {body_text[:200]}")
+    print(f"[login] Page: {body_text[:300]}")
     
     # 检查是否过 CF
-    if "security verification" in body_text.lower() or "just a moment" in body_text.lower():
-        print("[login] Still on CF page, trying UC click...")
-        sb.uc_gui_click_captcha()
-        time.sleep(10)
-        body_text = sb.get_text("body")[:500]
-        print(f"[login] After UC click: {body_text[:200]}")
+    if not wait_cf(sb):
+        print("[login] CF timeout")
+        return False
+    
+    time.sleep(3)
+    body_text = sb.get_text("body")[:500]
+    print(f"[login] After CF: {body_text[:200]}")
     
     # 点 Discord 登录
     print("[login] Looking for Discord login...")
@@ -105,6 +122,8 @@ def login(sb):
     
     url = sb.driver.current_url
     print(f"[login] Final URL: {url[:80]}")
+    body_text = sb.get_text("body")[:500]
+    print(f"[login] Final page: {body_text[:200]}")
     
     if "dashboard" in url.lower() and "login" not in url.lower():
         print("[login] ✅ OK!")
@@ -125,18 +144,28 @@ def watch_ad(sb, idx):
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
         
-        # 等页面加载
+        # 设置 cf_clearance
+        if CF_CLEARANCE:
+            try:
+                sb.driver.add_cookie({
+                    "name": "cf_clearance",
+                    "value": CF_CLEARANCE,
+                    "path": "/",
+                    "domain": ".minet.vn"
+                })
+            except: pass
+        
+        sb.execute_script("location.reload();")
         time.sleep(10)
+        
+        if not wait_cf(sb):
+            print(f"[ad {idx}] CF timeout")
+            return False
+        
+        time.sleep(3)
         
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page: {body_text[:200]}")
-        
-        if "security verification" in body_text.lower():
-            print(f"[ad {idx}] CF blocking, trying UC click...")
-            sb.uc_gui_click_captcha()
-            time.sleep(10)
-            body_text = sb.get_text("body")[:500]
-            print(f"[ad {idx}] After UC: {body_text[:200]}")
         
         btn = sb.find_element("#link4mBtn")
         if btn:
@@ -172,7 +201,7 @@ def run():
     if not DISCORD_TOKEN:
         print("ERROR: DISCORD_TOKEN not set"); return 0
     if not CF_CLEARANCE:
-        print("WARNING: CF_CLEARANCE not set, may fail")
+        print("WARNING: CF_CLEARANCE not set")
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
     
     sb_args = {"uc": True, "headless": True, "locale_code": "en"}
