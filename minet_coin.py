@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + SOCKS5 proxy with retry
+Minet.vn Auto Coin - UC mode + gost HTTP proxy
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -22,19 +22,17 @@ def notify(text):
     except: pass
 
 def login(sb, sid):
-    """UC mode with SOCKS5 proxy"""
+    """UC mode with HTTP proxy"""
     print(f"[login] Opening minet.vn with UC mode...")
     if PROXY:
         print(f"[login] Using proxy: ***")
     
-    # 使用更长的 reconnect 时间
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
-    time.sleep(8)  # 多等几秒
+    time.sleep(8)
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
     
-    # 检查 Cloudflare
     body = sb.get_text("body")[:300]
     print(f"[login] Body: {body[:150]}")
     
@@ -43,18 +41,15 @@ def login(sb, sid):
         sb.uc_gui_click_captcha()
         time.sleep(10)
     
-    # 等页面完全加载
     print("[login] Waiting for page...")
     time.sleep(8)
     
     url = sb.driver.current_url
     print(f"[login] URL after wait: {url[:80]}")
     
-    # 打印页面内容
     body_text = sb.get_text("body")[:500]
     print(f"[login] Page text: {body_text[:300]}")
     
-    # 设置 cookie
     print("[login] Setting cookie...")
     try:
         sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
@@ -63,7 +58,6 @@ def login(sb, sid):
         print(f"[login] Cookie error: {e}")
         return False
     
-    # 刷新页面
     print("[login] Refreshing...")
     sb.execute_script("location.reload();")
     time.sleep(8)
@@ -92,7 +86,19 @@ def watch_ad(sb, idx):
         # 导航到 earn 页面
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
-        time.sleep(10)  # 多等几秒
+        
+        # 等 Cloudflare 验证完成
+        print(f"[ad {idx}] Waiting for Cloudflare...")
+        for i in range(30):
+            time.sleep(2)
+            body = sb.get_text("body")[:200]
+            if "security verification" not in body.lower() and "checking" not in body.lower():
+                print(f"[ad {idx}] Cloudflare passed!")
+                break
+            if i % 5 == 0:
+                print(f"[ad {idx}] Waiting for CF... ({i*2}s)")
+        
+        time.sleep(5)  # 额外等待页面加载
         
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page text: {body_text[:300]}")
