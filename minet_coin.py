@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + JS navigation + screenshots
+Minet.vn Auto Coin - UC mode + US proxy
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -11,6 +11,7 @@ MINET_SID = os.environ.get("MINET_SID", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
+PROXY = os.environ.get("PROXY", "")  # 代理: "http://ip:port" 或 "socks5://ip:port"
 
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: return
@@ -21,8 +22,11 @@ def notify(text):
     except: pass
 
 def login(sb, sid):
-    """UC mode: open page, solve Cloudflare, set cookie"""
-    print("[login] Opening minet.vn with UC mode...")
+    """UC mode with US proxy"""
+    print(f"[login] Opening minet.vn with UC mode...")
+    if PROXY:
+        print(f"[login] Using proxy: {PROXY}")
+    
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=12)
     time.sleep(3)
     
@@ -47,13 +51,9 @@ def login(sb, sid):
     url = sb.driver.current_url
     print(f"[login] After refresh: {url[:60]}")
     
-    # 截图调试
-    sb.save_screenshot("/tmp/minet_dashboard.png")
-    print("[login] 截图已保存")
-    
     # 打印页面内容
     body_text = sb.get_text("body")[:500]
-    print(f"[login] Page text: {body_text[:200]}")
+    print(f"[login] Page text: {body_text[:300]}")
     
     if "login" not in url.lower():
         print("[login] ✅ OK!")
@@ -71,41 +71,29 @@ def get_balance(sb):
 def watch_ad(sb, idx):
     print(f"[ad {idx}] Looking for button...")
     try:
-        # 先尝试直接找按钮
+        # 导航到 earn 页面
+        print(f"[ad {idx}] Navigating to /earn...")
+        sb.open(f"{MINET_BASE}/earn")
+        time.sleep(8)
+        
+        # 打印页面内容
+        body_text = sb.get_text("body")[:500]
+        print(f"[ad {idx}] Page text: {body_text[:300]}")
+        
+        # 找按钮
         btn = sb.find_element("#link4mBtn")
         if btn:
             print(f"[ad {idx}] Found button: {btn.text}")
             btn.click()
             time.sleep(3)
         else:
-            # 用 JS 导航到 earn 页面
-            print(f"[ad {idx}] Button not found, navigating to /earn with JS...")
-            sb.execute_script("window.location.href = '/earn';")
-            time.sleep(8)  # 等更久
-            
-            # 截图
-            sb.save_screenshot("/tmp/minet_earn.png")
-            print(f"[ad {idx}] 截图已保存")
-            
-            # 打印页面内容
-            body_text = sb.get_text("body")[:500]
-            print(f"[ad {idx}] Page text: {body_text[:200]}")
-            
+            print(f"[ad {idx}] Button not found")
             # 列出所有按钮
             btns = sb.find_elements("button")
             print(f"[ad {idx}] 找到 {len(btns)} 个按钮:")
             for b in btns[:10]:
                 print(f"  - {b.get_attribute('id')}: {b.text[:30]}")
-            
-            # 再找一次
-            btn = sb.find_element("#link4mBtn")
-            if btn:
-                print(f"[ad {idx}] Found button after navigation: {btn.text}")
-                btn.click()
-                time.sleep(3)
-            else:
-                print(f"[ad {idx}] Button still not found")
-                return False
+            return False
         
         # 等广告完成
         print(f"[ad {idx}] Waiting for ad...")
@@ -133,7 +121,17 @@ def run():
     if not MINET_SID:
         print("ERROR: MINET_SID not set"); return 0
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
-    with SB(uc=True, headless=True, locale_code="en") as sb:
+    
+    # 构建 SB 参数
+    sb_args = {
+        "uc": True,
+        "headless": True,
+        "locale_code": "en"
+    }
+    if PROXY:
+        sb_args["proxy"] = PROXY
+    
+    with SB(**sb_args) as sb:
         if not login(sb, MINET_SID):
             notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
             return 0
