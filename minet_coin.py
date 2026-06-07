@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + JS navigation
+Minet.vn Auto Coin - UC mode + JS navigation + screenshots
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -47,6 +47,14 @@ def login(sb, sid):
     url = sb.driver.current_url
     print(f"[login] After refresh: {url[:60]}")
     
+    # 截图调试
+    sb.save_screenshot("/tmp/minet_dashboard.png")
+    print("[login] 截图已保存")
+    
+    # 打印页面内容
+    body_text = sb.get_text("body")[:500]
+    print(f"[login] Page text: {body_text[:200]}")
+    
     if "login" not in url.lower():
         print("[login] ✅ OK!")
         return True
@@ -73,7 +81,21 @@ def watch_ad(sb, idx):
             # 用 JS 导航到 earn 页面
             print(f"[ad {idx}] Button not found, navigating to /earn with JS...")
             sb.execute_script("window.location.href = '/earn';")
-            time.sleep(5)
+            time.sleep(8)  # 等更久
+            
+            # 截图
+            sb.save_screenshot("/tmp/minet_earn.png")
+            print(f"[ad {idx}] 截图已保存")
+            
+            # 打印页面内容
+            body_text = sb.get_text("body")[:500]
+            print(f"[ad {idx}] Page text: {body_text[:200]}")
+            
+            # 列出所有按钮
+            btns = sb.find_elements("button")
+            print(f"[ad {idx}] 找到 {len(btns)} 个按钮:")
+            for b in btns[:10]:
+                print(f"  - {b.get_attribute('id')}: {b.text[:30]}")
             
             # 再找一次
             btn = sb.find_element("#link4mBtn")
