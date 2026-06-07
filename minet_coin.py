@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + Discord OAuth + cf_clearance
-不用 uc_gui_click_captcha（headless 不支持 PyAutoGUI）
+Minet.vn Auto Coin - UC mode + Discord OAuth + proxy
+改进: 先用代理过CF，等待更长时间让页面加载
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -9,7 +9,6 @@ from seleniumbase import SB
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
-CF_CLEARANCE = os.environ.get("CF_CLEARANCE", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
@@ -23,60 +22,57 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def wait_cf(sb, max_wait=60):
-    """等待 Cloudflare 完成（不调用 PyAutoGUI）"""
-    for i in range(max_wait // 2):
-        time.sleep(2)
-        body = sb.get_text("body")[:300].lower()
-        if "security verification" not in body and \
-           "checking" not in body and \
-           "just a moment" not in body and \
-           "waiting for" not in body:
-            print(f"[CF] ✅ Passed!")
+def wait_page_load(sb, max_wait=90):
+    """等待页面真正加载（不只是 CF 验证通过）"""
+    print("[wait] Waiting for page to fully load...")
+    for i in range(max_wait // 3):
+        time.sleep(3)
+        url = sb.driver.current_url
+        body = sb.get_text("body")[:500]
+        
+        # 检查页面是否有实际内容（不只是域名）
+        if len(body) > 50 and \
+           "security verification" not in body.lower() and \
+           "just a moment" not in body.lower() and \
+           "checking" not in body.lower() and \
+           "waiting for" not in body.lower():
+            print(f"[wait] ✅ Page loaded! URL: {url[:60]}")
+            print(f"[wait] Content: {body[:200]}")
             return True
-        if i % 5 == 0:
-            print(f"[CF] Waiting... ({i*2}s)")
+        
+        if i % 10 == 0:
+            print(f"[wait] Waiting... ({i*3}s) URL: {url[:60]}")
+    
+    print("[wait] ❌ Page load timeout")
     return False
 
 def login(sb):
-    """使用 cf_clearance + Discord token"""
-    print(f"[login] Opening minet.vn...")
+    """使用代理 + Discord OAuth"""
+    print(f"[login] Opening minet.vn with proxy...")
+    if PROXY:
+        print(f"[login] Using proxy: ***")
     
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
-    time.sleep(5)
-    
-    # 设置 cf_clearance cookie
-    if CF_CLEARANCE:
-        print("[login] Setting cf_clearance...")
-        try:
-            sb.driver.add_cookie({
-                "name": "cf_clearance",
-                "value": CF_CLEARANCE,
-                "path": "/",
-                "domain": ".minet.vn"
-            })
-            print("[login] cf_clearance set!")
-        except Exception as e:
-            print(f"[login] cf_clearance error: {e}")
-    
-    # 刷新页面
-    print("[login] Refreshing...")
-    sb.execute_script("location.reload();")
     time.sleep(10)
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
-    body_text = sb.get_text("body")[:500]
-    print(f"[login] Page: {body_text[:300]}")
+    body = sb.get_text("body")[:300]
+    print(f"[login] Body: {body[:150]}")
     
-    # 检查是否过 CF
-    if not wait_cf(sb):
-        print("[login] CF timeout")
-        return False
+    # 等页面加载
+    if not wait_page_load(sb):
+        print("[login] Page load timeout")
+        # 尝试刷新
+        sb.execute_script("location.reload();")
+        time.sleep(15)
+        if not wait_page_load(sb):
+            return False
     
-    time.sleep(3)
+    url = sb.driver.current_url
+    print(f"[login] URL after wait: {url[:80]}")
     body_text = sb.get_text("body")[:500]
-    print(f"[login] After CF: {body_text[:200]}")
+    print(f"[login] Page: {body_text[:200]}")
     
     # 点 Discord 登录
     print("[login] Looking for Discord login...")
@@ -144,22 +140,8 @@ def watch_ad(sb, idx):
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
         
-        # 设置 cf_clearance
-        if CF_CLEARANCE:
-            try:
-                sb.driver.add_cookie({
-                    "name": "cf_clearance",
-                    "value": CF_CLEARANCE,
-                    "path": "/",
-                    "domain": ".minet.vn"
-                })
-            except: pass
-        
-        sb.execute_script("location.reload();")
-        time.sleep(10)
-        
-        if not wait_cf(sb):
-            print(f"[ad {idx}] CF timeout")
+        if not wait_page_load(sb):
+            print(f"[ad {idx}] Page load timeout")
             return False
         
         time.sleep(3)
@@ -200,8 +182,6 @@ def watch_ad(sb, idx):
 def run():
     if not DISCORD_TOKEN:
         print("ERROR: DISCORD_TOKEN not set"); return 0
-    if not CF_CLEARANCE:
-        print("WARNING: CF_CLEARANCE not set")
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
     
     sb_args = {"uc": True, "headless": True, "locale_code": "en"}
