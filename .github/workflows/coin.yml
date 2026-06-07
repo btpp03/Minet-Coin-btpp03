@@ -9,6 +9,7 @@ env:
   DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
   TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
   TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+  CF_CLEARANCE: ${{ secrets.CF_CLEARANCE }}
   ACCOUNT_NAME: 'btpp03'
   MAX_ADS: '20'
   PROXY: ${{ secrets.PROXY }}
@@ -35,3 +36,4 @@ jobs:
           DISPLAY: ':99.0'
           PROXY: 'http://127.0.0.1:8080'
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          CF_CLEARANCE: ${{ secrets.CF_CLEARANCE }}
