@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + HTTP proxy via gost
+Minet.vn Auto Coin - UC mode + SOCKS5 proxy with retry
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -22,13 +22,14 @@ def notify(text):
     except: pass
 
 def login(sb, sid):
-    """UC mode with HTTP proxy"""
+    """UC mode with SOCKS5 proxy"""
     print(f"[login] Opening minet.vn with UC mode...")
     if PROXY:
         print(f"[login] Using proxy: ***")
     
-    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=20)
-    time.sleep(5)
+    # 使用更长的 reconnect 时间
+    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
+    time.sleep(8)  # 多等几秒
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
@@ -40,11 +41,11 @@ def login(sb, sid):
     if "Just a moment" in body or "checking" in body.lower():
         print("[login] Cloudflare challenge...")
         sb.uc_gui_click_captcha()
-        time.sleep(8)
+        time.sleep(10)
     
     # 等页面完全加载
     print("[login] Waiting for page...")
-    time.sleep(5)
+    time.sleep(8)
     
     url = sb.driver.current_url
     print(f"[login] URL after wait: {url[:80]}")
@@ -65,7 +66,7 @@ def login(sb, sid):
     # 刷新页面
     print("[login] Refreshing...")
     sb.execute_script("location.reload();")
-    time.sleep(5)
+    time.sleep(8)
     
     url = sb.driver.current_url
     print(f"[login] After refresh: {url[:80]}")
@@ -91,7 +92,7 @@ def watch_ad(sb, idx):
         # 导航到 earn 页面
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
-        time.sleep(8)
+        time.sleep(10)  # 多等几秒
         
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page text: {body_text[:300]}")
