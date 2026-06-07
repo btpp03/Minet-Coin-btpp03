@@ -21,8 +21,47 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def wait_for_cloudflare(sb, max_wait=60):
-    """等待 Cloudflare 验证完成"""
+def solve_cloudflare(sb, max_wait=60):
+    """点击 Turnstile 并等待验证完成"""
+    print("[CF] Looking for Turnstile...")
+    
+    # 尝试点击 Turnstile 验证框
+    try:
+        # 方法1: 找 iframe
+        iframes = sb.find_elements("iframe")
+        for iframe in iframes:
+            src = iframe.get_attribute("src") or ""
+            if "turnstile" in src or "challenges.cloudflare.com" in src:
+                print(f"[CF] Found Turnstile iframe: {src[:60]}")
+                sb.switch_to_frame(iframe)
+                time.sleep(2)
+                # 点击验证框
+                checkbox = sb.find_element("input[type='checkbox']")
+                if checkbox:
+                    checkbox.click()
+                    print("[CF] Clicked checkbox!")
+                sb.switch_to_default_frame()
+                break
+        
+        # 方法2: 直接点 Turnstile 按钮
+        btns = sb.find_elements("[class*='turnstile'], [id*='turnstile'], [class*='cf-']")
+        for b in btns:
+            print(f"[CF] Found turnstile element: {b.get_attribute('class')}")
+            b.click()
+            time.sleep(2)
+            break
+    except Exception as e:
+        print(f"[CF] Click attempt: {e}")
+    
+    # 使用 UC 模式自动处理
+    try:
+        sb.uc_gui_click_captcha()
+        print("[CF] UC captcha click done")
+    except:
+        pass
+    
+    # 等待验证完成
+    print("[CF] Waiting for verification...")
     for i in range(max_wait // 2):
         time.sleep(2)
         body = sb.get_text("body")[:300]
@@ -62,7 +101,7 @@ def login(sb):
     print(f"[login] URL: {url[:80]}")
     
     # 等 Cloudflare
-    if not wait_for_cloudflare(sb):
+    if not solve_cloudflare(sb):
         print("[login] Cloudflare timeout")
         return False
     
@@ -76,7 +115,6 @@ def login(sb):
     # 点击 Discord 登录
     print("[login] Looking for Discord login...")
     try:
-        # 找 Discord 登录按钮
         discord_btn = None
         btns = sb.find_elements("button, a")
         for b in btns:
@@ -87,7 +125,6 @@ def login(sb):
                 break
         
         if not discord_btn:
-            # 尝试找链接
             links = sb.find_elements("a")
             for l in links:
                 href = l.get_attribute("href") or ""
@@ -100,14 +137,11 @@ def login(sb):
             discord_btn.click()
             time.sleep(5)
             
-            # 等 Discord 页面加载
             url = sb.driver.current_url
             print(f"[login] After click: {url[:80]}")
             
-            # 如果需要输入 Discord token
             if "discord" in url.lower():
                 print("[login] On Discord page, injecting token...")
-                # 使用 token 登录
                 sb.execute_script(f"""
                     window.localStorage.setItem('token', '{DISCORD_TOKEN}');
                 """)
@@ -122,7 +156,6 @@ def login(sb):
         print(f"[login] Error: {e}")
         return False
     
-    # 检查登录状态
     url = sb.driver.current_url
     print(f"[login] Final URL: {url[:80]}")
     body_text = sb.get_text("body")[:500]
@@ -147,7 +180,7 @@ def watch_ad(sb, idx):
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
         
-        if not wait_for_cloudflare(sb):
+        if not solve_cloudflare(sb):
             print(f"[ad {idx}] Cloudflare timeout")
             return False
         
