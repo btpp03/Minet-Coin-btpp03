@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  MINET_SID: ${{ secrets.MINET_SID }}
+  DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
   TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
   TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
   ACCOUNT_NAME: 'btpp03'
@@ -27,12 +27,11 @@ jobs:
           curl -fsSL -o /tmp/gost.tar.gz "https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_linux_amd64.tar.gz"
           cd /tmp && tar xzf gost.tar.gz
           chmod +x /tmp/gost
-          # 启动 gost: SOCKS5 → HTTP
           nohup /tmp/gost -L http://:8080 -F "$PROXY" > /tmp/gost.log 2>&1 &
           sleep 3
-          # 验证代理
           curl -x http://127.0.0.1:8080 -s "http://ip-api.com/json" | jq '.query, .country'
       - run: xvfb-run python minet_coin.py
         env:
           DISPLAY: ':99.0'
           PROXY: 'http://127.0.0.1:8080'
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
