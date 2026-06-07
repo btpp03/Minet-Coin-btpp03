@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + gost HTTP proxy (no ad blocking)
+Minet.vn Auto Coin - UC mode + gost HTTP proxy
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -80,6 +80,38 @@ def get_balance(sb):
         return int(m.group(1).replace(',', '')) if m else 0
     except: return 0
 
+def wait_for_cloudflare(sb, max_wait=60):
+    """等待 Cloudflare 验证完成"""
+    for i in range(max_wait // 2):
+        time.sleep(2)
+        body = sb.get_text("body")[:300]
+        
+        # 如果页面有实际内容（不是 Cloudflare 页面）
+        if "security verification" not in body.lower() and \
+           "checking" not in body.lower() and \
+           "just a moment" not in body.lower() and \
+           "waiting for" not in body.lower():
+            print(f"[CF] ✅ Passed! Page loaded.")
+            return True
+        
+        # 如果验证通过但等待响应
+        if "verification successful" in body.lower():
+            print(f"[CF] Verification successful, waiting for redirect...")
+            time.sleep(5)
+            # 刷新页面
+            sb.execute_script("location.reload();")
+            time.sleep(5)
+            # 再检查
+            body = sb.get_text("body")[:300]
+            if "security verification" not in body.lower():
+                print(f"[CF] ✅ Passed after reload!")
+                return True
+        
+        if i % 5 == 0:
+            print(f"[CF] Waiting... ({i*2}s)")
+    
+    return False
+
 def watch_ad(sb, idx):
     print(f"[ad {idx}] Looking for button...")
     try:
@@ -89,16 +121,11 @@ def watch_ad(sb, idx):
         
         # 等 Cloudflare 验证完成
         print(f"[ad {idx}] Waiting for Cloudflare...")
-        for i in range(30):
-            time.sleep(2)
-            body = sb.get_text("body")[:200]
-            if "security verification" not in body.lower() and "checking" not in body.lower():
-                print(f"[ad {idx}] Cloudflare passed!")
-                break
-            if i % 5 == 0:
-                print(f"[ad {idx}] Waiting for CF... ({i*2}s)")
+        if not wait_for_cloudflare(sb):
+            print(f"[ad {idx}] Cloudflare timeout")
+            return False
         
-        time.sleep(5)
+        time.sleep(3)
         
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page text: {body_text[:300]}")
