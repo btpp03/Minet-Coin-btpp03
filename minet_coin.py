@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + gost HTTP proxy
+Minet.vn Auto Coin - UC mode + gost HTTP proxy (no ad blocking)
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -98,7 +98,7 @@ def watch_ad(sb, idx):
             if i % 5 == 0:
                 print(f"[ad {idx}] Waiting for CF... ({i*2}s)")
         
-        time.sleep(5)  # 额外等待页面加载
+        time.sleep(5)
         
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page text: {body_text[:300]}")
