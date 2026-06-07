@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + gost HTTP proxy
+Minet.vn Auto Coin - UC mode + Discord OAuth + gost HTTP proxy
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
 
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
-MINET_SID = os.environ.get("MINET_SID", "")
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
@@ -21,9 +21,37 @@ def notify(text):
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
 
-def login(sb, sid):
-    """UC mode with HTTP proxy"""
-    print(f"[login] Opening minet.vn with UC mode...")
+def wait_for_cloudflare(sb, max_wait=60):
+    """等待 Cloudflare 验证完成"""
+    for i in range(max_wait // 2):
+        time.sleep(2)
+        body = sb.get_text("body")[:300]
+        
+        if "security verification" not in body.lower() and \
+           "checking" not in body.lower() and \
+           "just a moment" not in body.lower() and \
+           "waiting for" not in body.lower():
+            print(f"[CF] ✅ Passed!")
+            return True
+        
+        if "verification successful" in body.lower():
+            print(f"[CF] Verification successful, reloading...")
+            time.sleep(5)
+            sb.execute_script("location.reload();")
+            time.sleep(5)
+            body = sb.get_text("body")[:300]
+            if "security verification" not in body.lower():
+                print(f"[CF] ✅ Passed after reload!")
+                return True
+        
+        if i % 5 == 0:
+            print(f"[CF] Waiting... ({i*2}s)")
+    
+    return False
+
+def login(sb):
+    """UC mode + Discord OAuth"""
+    print(f"[login] Opening minet.vn...")
     if PROXY:
         print(f"[login] Using proxy: ***")
     
@@ -33,41 +61,74 @@ def login(sb, sid):
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
     
-    body = sb.get_text("body")[:300]
-    print(f"[login] Body: {body[:150]}")
-    
-    if "Just a moment" in body or "checking" in body.lower():
-        print("[login] Cloudflare challenge...")
-        sb.uc_gui_click_captcha()
-        time.sleep(10)
-    
-    print("[login] Waiting for page...")
-    time.sleep(8)
-    
-    url = sb.driver.current_url
-    print(f"[login] URL after wait: {url[:80]}")
-    
-    body_text = sb.get_text("body")[:500]
-    print(f"[login] Page text: {body_text[:300]}")
-    
-    print("[login] Setting cookie...")
-    try:
-        sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
-        print("[login] Cookie set!")
-    except Exception as e:
-        print(f"[login] Cookie error: {e}")
+    # 等 Cloudflare
+    if not wait_for_cloudflare(sb):
+        print("[login] Cloudflare timeout")
         return False
     
-    print("[login] Refreshing...")
-    sb.execute_script("location.reload();")
-    time.sleep(8)
+    time.sleep(5)
     
     url = sb.driver.current_url
-    print(f"[login] After refresh: {url[:80]}")
+    print(f"[login] URL after CF: {url[:80]}")
     body_text = sb.get_text("body")[:500]
-    print(f"[login] Page text: {body_text[:300]}")
+    print(f"[login] Page: {body_text[:200]}")
     
-    if "login" not in url.lower():
+    # 点击 Discord 登录
+    print("[login] Looking for Discord login...")
+    try:
+        # 找 Discord 登录按钮
+        discord_btn = None
+        btns = sb.find_elements("button, a")
+        for b in btns:
+            text = b.text.lower()
+            if "discord" in text or "login" in text:
+                discord_btn = b
+                print(f"[login] Found: {b.text}")
+                break
+        
+        if not discord_btn:
+            # 尝试找链接
+            links = sb.find_elements("a")
+            for l in links:
+                href = l.get_attribute("href") or ""
+                if "discord" in href.lower():
+                    discord_btn = l
+                    print(f"[login] Found link: {href[:60]}")
+                    break
+        
+        if discord_btn:
+            discord_btn.click()
+            time.sleep(5)
+            
+            # 等 Discord 页面加载
+            url = sb.driver.current_url
+            print(f"[login] After click: {url[:80]}")
+            
+            # 如果需要输入 Discord token
+            if "discord" in url.lower():
+                print("[login] On Discord page, injecting token...")
+                # 使用 token 登录
+                sb.execute_script(f"""
+                    window.localStorage.setItem('token', '{DISCORD_TOKEN}');
+                """)
+                time.sleep(2)
+                sb.execute_script("location.reload();")
+                time.sleep(5)
+        else:
+            print("[login] Discord button not found")
+            return False
+    
+    except Exception as e:
+        print(f"[login] Error: {e}")
+        return False
+    
+    # 检查登录状态
+    url = sb.driver.current_url
+    print(f"[login] Final URL: {url[:80]}")
+    body_text = sb.get_text("body")[:500]
+    print(f"[login] Final page: {body_text[:200]}")
+    
+    if "dashboard" in url.lower() and "login" not in url.lower():
         print("[login] ✅ OK!")
         return True
     print("[login] ❌ Failed")
@@ -80,47 +141,12 @@ def get_balance(sb):
         return int(m.group(1).replace(',', '')) if m else 0
     except: return 0
 
-def wait_for_cloudflare(sb, max_wait=60):
-    """等待 Cloudflare 验证完成"""
-    for i in range(max_wait // 2):
-        time.sleep(2)
-        body = sb.get_text("body")[:300]
-        
-        # 如果页面有实际内容（不是 Cloudflare 页面）
-        if "security verification" not in body.lower() and \
-           "checking" not in body.lower() and \
-           "just a moment" not in body.lower() and \
-           "waiting for" not in body.lower():
-            print(f"[CF] ✅ Passed! Page loaded.")
-            return True
-        
-        # 如果验证通过但等待响应
-        if "verification successful" in body.lower():
-            print(f"[CF] Verification successful, waiting for redirect...")
-            time.sleep(5)
-            # 刷新页面
-            sb.execute_script("location.reload();")
-            time.sleep(5)
-            # 再检查
-            body = sb.get_text("body")[:300]
-            if "security verification" not in body.lower():
-                print(f"[CF] ✅ Passed after reload!")
-                return True
-        
-        if i % 5 == 0:
-            print(f"[CF] Waiting... ({i*2}s)")
-    
-    return False
-
 def watch_ad(sb, idx):
     print(f"[ad {idx}] Looking for button...")
     try:
-        # 导航到 earn 页面
         print(f"[ad {idx}] Navigating to /earn...")
         sb.open(f"{MINET_BASE}/earn")
         
-        # 等 Cloudflare 验证完成
-        print(f"[ad {idx}] Waiting for Cloudflare...")
         if not wait_for_cloudflare(sb):
             print(f"[ad {idx}] Cloudflare timeout")
             return False
@@ -128,9 +154,8 @@ def watch_ad(sb, idx):
         time.sleep(3)
         
         body_text = sb.get_text("body")[:500]
-        print(f"[ad {idx}] Page text: {body_text[:300]}")
+        print(f"[ad {idx}] Page: {body_text[:200]}")
         
-        # 找按钮
         btn = sb.find_element("#link4mBtn")
         if btn:
             print(f"[ad {idx}] Found button: {btn.text}")
@@ -140,7 +165,6 @@ def watch_ad(sb, idx):
             print(f"[ad {idx}] Button not found")
             return False
         
-        # 等广告完成
         print(f"[ad {idx}] Waiting for ad...")
         for i in range(90):
             time.sleep(1)
@@ -163,8 +187,8 @@ def watch_ad(sb, idx):
         return False
 
 def run():
-    if not MINET_SID:
-        print("ERROR: MINET_SID not set"); return 0
+    if not DISCORD_TOKEN:
+        print("ERROR: DISCORD_TOKEN not set"); return 0
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
     
     sb_args = {
@@ -176,7 +200,7 @@ def run():
         sb_args["proxy"] = PROXY
     
     with SB(**sb_args) as sb:
-        if not login(sb, MINET_SID):
+        if not login(sb):
             notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
             return 0
         initial = get_balance(sb)
