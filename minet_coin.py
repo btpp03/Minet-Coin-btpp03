@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode + US proxy
+Minet.vn Auto Coin - UC mode, no proxy
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -11,7 +11,6 @@ MINET_SID = os.environ.get("MINET_SID", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
-PROXY = os.environ.get("PROXY", "")
 
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: return
@@ -22,56 +21,51 @@ def notify(text):
     except: pass
 
 def login(sb, sid):
-    """UC mode with US proxy"""
-    print(f"[login] Opening minet.vn with UC mode...")
-    if PROXY:
-        print(f"[login] Using proxy: ***")
+    """UC mode: open page, solve Cloudflare, set cookie"""
+    print("[login] Opening minet.vn with UC mode (no proxy)...")
     
-    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=15)
-    time.sleep(5)  # 多等几秒
+    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=20)
+    time.sleep(5)
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
     
     # 检查 Cloudflare
-    body = sb.get_text("body")[:200]
-    print(f"[login] Body preview: {body[:100]}")
-    if "Just a moment" in body:
+    body = sb.get_text("body")[:300]
+    print(f"[login] Body: {body[:150]}")
+    
+    if "Just a moment" in body or "checking" in body.lower():
         print("[login] Cloudflare challenge...")
         sb.uc_gui_click_captcha()
         time.sleep(8)
     
     # 等页面完全加载
-    print("[login] Waiting for page to fully load...")
-    time.sleep(3)
+    print("[login] Waiting for page...")
+    time.sleep(5)
     
-    # 检查当前域名
-    current_url = sb.driver.current_url
-    print(f"[login] Current URL before cookie: {current_url[:80]}")
+    url = sb.driver.current_url
+    print(f"[login] URL after wait: {url[:80]}")
     
+    # 打印页面内容
+    body_text = sb.get_text("body")[:500]
+    print(f"[login] Page text: {body_text[:300]}")
+    
+    # 设置 cookie
     print("[login] Setting cookie...")
     try:
         sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
-        print("[login] Cookie set OK!")
+        print("[login] Cookie set!")
     except Exception as e:
         print(f"[login] Cookie error: {e}")
-        # 尝试不指定 domain
-        try:
-            sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/"})
-            print("[login] Cookie set without domain OK!")
-        except Exception as e2:
-            print(f"[login] Cookie error without domain: {e2}")
-            return False
+        return False
     
     # 刷新页面
-    print("[login] Refreshing page...")
+    print("[login] Refreshing...")
     sb.execute_script("location.reload();")
     time.sleep(5)
     
     url = sb.driver.current_url
     print(f"[login] After refresh: {url[:80]}")
-    
-    # 打印页面内容
     body_text = sb.get_text("body")[:500]
     print(f"[login] Page text: {body_text[:300]}")
     
@@ -96,7 +90,6 @@ def watch_ad(sb, idx):
         sb.open(f"{MINET_BASE}/earn")
         time.sleep(8)
         
-        # 打印页面内容
         body_text = sb.get_text("body")[:500]
         print(f"[ad {idx}] Page text: {body_text[:300]}")
         
@@ -136,16 +129,7 @@ def run():
     if not MINET_SID:
         print("ERROR: MINET_SID not set"); return 0
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
-    
-    sb_args = {
-        "uc": True,
-        "headless": True,
-        "locale_code": "en"
-    }
-    if PROXY:
-        sb_args["proxy"] = PROXY
-    
-    with SB(**sb_args) as sb:
+    with SB(uc=True, headless=True, locale_code="en") as sb:
         if not login(sb, MINET_SID):
             notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
             return 0
