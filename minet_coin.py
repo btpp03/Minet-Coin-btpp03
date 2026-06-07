@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minet.vn Auto Coin - UC mode, no proxy
+Minet.vn Auto Coin - UC mode + HTTP proxy via gost
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -11,6 +11,7 @@ MINET_SID = os.environ.get("MINET_SID", "")
 MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
+PROXY = os.environ.get("PROXY", "")
 
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: return
@@ -21,8 +22,10 @@ def notify(text):
     except: pass
 
 def login(sb, sid):
-    """UC mode: open page, solve Cloudflare, set cookie"""
-    print("[login] Opening minet.vn with UC mode (no proxy)...")
+    """UC mode with HTTP proxy"""
+    print(f"[login] Opening minet.vn with UC mode...")
+    if PROXY:
+        print(f"[login] Using proxy: ***")
     
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=20)
     time.sleep(5)
@@ -129,7 +132,16 @@ def run():
     if not MINET_SID:
         print("ERROR: MINET_SID not set"); return 0
     print(f"\n{'='*50}\nMinet.vn Auto Coin ({ACCOUNT_NAME})\n{'='*50}")
-    with SB(uc=True, headless=True, locale_code="en") as sb:
+    
+    sb_args = {
+        "uc": True,
+        "headless": True,
+        "locale_code": "en"
+    }
+    if PROXY:
+        sb_args["proxy"] = PROXY
+    
+    with SB(**sb_args) as sb:
         if not login(sb, MINET_SID):
             notify(f"❌ [{ACCOUNT_NAME}] Minet login failed")
             return 0
