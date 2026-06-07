@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Minet.vn Auto Coin - Watch ads and claim rewards
-Uses same UC approach as Firecone to bypass Cloudflare
+UC mode + ad blocking to reduce memory usage
 """
 import os, re, json, time, random, urllib.request
 from seleniumbase import SB
@@ -13,6 +13,21 @@ MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
 
+# 广告域名黑名单
+AD_DOMAINS = [
+    "googleads.g.doubleclick.net",
+    "pagead2.googlesyndication.com",
+    "adservice.google.com",
+    "www.googletagmanager.com",
+    "ad.doubleclick.net",
+    "ad.turn.com",
+    "cdn.taboola.com",
+    "static.criteo.net",
+    "cdn-vitals.com",
+    "analytics.ocean.io",
+    "fundingchoicesmessages.google.com",
+]
+
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: return
     try:
@@ -20,6 +35,20 @@ def notify(text):
         data = json.dumps({"chat_id": TG_CHAT_ID, "text": text}).encode()
         urllib.request.urlopen(urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}), timeout=10)
     except: pass
+
+def block_ads(sb):
+    """使用 Chrome DevTools Protocol 屏蔽广告资源"""
+    try:
+        # 启用 Network 域
+        sb.driver.execute_cdp_cmd("Network.enable", {})
+        
+        # 设置请求拦截
+        sb.driver.execute_cdp_cmd("Network.setBlockedURLs", {
+            "urls": AD_DOMAINS
+        })
+        print("[ads] ✅ 广告已屏蔽")
+    except Exception as e:
+        print(f"[ads] ⚠️ 屏蔽失败: {e}")
 
 def login(sb, sid):
     """UC mode: open page first, solve Cloudflare, then set cookie"""
@@ -30,12 +59,15 @@ def login(sb, sid):
     url = sb.driver.current_url
     print(f"[login] Initial URL: {url[:60]}")
     
-    # Check if Cloudflare is solved
+    # 检查 Cloudflare
     body = sb.get_text("body")[:200]
     if "Just a moment" in body:
-        print("[login] Cloudflare challenge, trying to solve...")
+        print("[login] Cloudflare challenge...")
         sb.uc_gui_click_captcha()
         time.sleep(5)
+    
+    # 屏蔽广告
+    block_ads(sb)
     
     print("[login] Setting cookie...")
     sb.driver.add_cookie({"name": "connect.sid", "value": sid, "path": "/", "domain": "dashboard.minet.vn"})
@@ -63,18 +95,16 @@ def get_balance(sb):
 def watch_ad(sb, idx):
     print(f"[ad {idx}] Looking for button...")
     try:
-        # Find and click earn button
         btn = sb.find_element("#link4mBtn")
         if btn:
             print(f"[ad {idx}] Clicking #link4mBtn...")
             btn.click()
             time.sleep(3)
         
-        # Wait for ad to finish
+        # 等广告完成
         print(f"[ad {idx}] Waiting for ad...")
         for i in range(90):
             time.sleep(1)
-            # Check for claim button
             btns = sb.find_elements("button")
             for b in btns:
                 if "claim" in b.text.lower():
