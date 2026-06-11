@@ -39,3 +39,14 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACCOUNT_NAME: 'btpp03'
           MAX_ADS: '20'
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minet-debug
+          path: |
+            /tmp/minet_*.png
+            /tmp/minet_*.html
+            /tmp/minet_*.txt
+          if-no-files-found: ignore
+

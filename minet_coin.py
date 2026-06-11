@@ -3,7 +3,7 @@
 Minet.vn Auto Coin - UC mode + Discord OAuth + proxy
 修复: 验证登录成功、添加详细调试、重试逻辑
 """
-import os, re, json, time, random, urllib.request
+import os, re, json, time, random, urllib.request, sys
 from seleniumbase import SB
 
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
@@ -26,6 +26,26 @@ def notify(text):
         print(f"[notify] ✅ Sent: {text[:50]}")
     except Exception as e:
         print(f"[notify] ❌ Failed: {e}")
+
+def save_debug(sb, name):
+    """保存失败现场，供 GitHub Actions artifact 下载排查"""
+    try:
+        sb.save_screenshot(f"/tmp/{name}.png")
+    except Exception as e:
+        print(f"[debug] screenshot failed: {e}")
+    try:
+        html = sb.driver.page_source
+        with open(f"/tmp/{name}.html", "w", encoding="utf-8") as f:
+            f.write(html)
+    except Exception as e:
+        print(f"[debug] html dump failed: {e}")
+    try:
+        with open(f"/tmp/{name}.txt", "w", encoding="utf-8") as f:
+            f.write("URL: " + sb.driver.current_url + "\n\n")
+            f.write(sb.get_text("body")[:5000])
+    except Exception as e:
+        print(f"[debug] text dump failed: {e}")
+    print(f"[debug] Saved /tmp/{name}.png/.html/.txt")
 
 def wait_page_load(sb, max_wait=90):
     """等待页面真正加载（不只是 CF 验证通过）"""
@@ -138,6 +158,7 @@ def login(sb):
         sb.execute_script("location.reload();")
         time.sleep(15)
         if not wait_page_load(sb):
+            save_debug(sb, "minet_page_load_timeout")
             notify(f"❌ [{ACCOUNT_NAME}] Page load timeout")
             return False
     
@@ -168,11 +189,7 @@ def login(sb):
         if not discord_btn:
             print("[login] ❌ Discord button not found")
             # 截图看看页面是什么
-            try:
-                sb.save_screenshot("/tmp/minet_login.png")
-                print("[login] Screenshot saved to /tmp/minet_login.png")
-            except:
-                pass
+            save_debug(sb, "minet_login_no_discord_button")
             return False
         
         discord_btn.click()
@@ -206,11 +223,7 @@ def login(sb):
         return True
     
     print("[login] ❌ Login FAILED - not verified")
-    try:
-        sb.save_screenshot("/tmp/minet_verify.png")
-        print("[login] Screenshot saved")
-    except:
-        pass
+    save_debug(sb, "minet_login_not_verified")
     notify(f"❌ [{ACCOUNT_NAME}] Login not verified")
     return False
 
@@ -263,7 +276,7 @@ def watch_ad(sb, idx):
                     break
             else:
                 print(f"[ad {idx}] No ad button found")
-                sb.save_screenshot(f"/tmp/minet_ad_{idx}.png")
+                save_debug(sb, f"minet_ad_{idx}_no_button")
                 return False
         
         print(f"[ad {idx}] Waiting for claim button...")
@@ -331,4 +344,8 @@ Balance: {initial} -> {final} (delta {d})"""
         return earned
 
 if __name__ == "__main__":
-    run()
+    earned = run()
+    if earned <= 0:
+        print("[exit] No ads earned or login failed; marking workflow as failed")
+        sys.exit(1)
+    sys.exit(0)
