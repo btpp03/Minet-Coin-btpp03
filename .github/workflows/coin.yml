@@ -5,35 +5,37 @@ on:
     - cron: '22 0 * * *'
   workflow_dispatch:
 
-env:
-  DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-  TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-  CF_CLEARANCE: ${{ secrets.CF_CLEARANCE }}
-  ACCOUNT_NAME: 'btpp03'
-  MAX_ADS: '20'
-  PROXY: ${{ secrets.PROXY }}
-
 jobs:
   mine:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - run: pip install --no-cache-dir -r requirements.txt
+
       - name: Setup gost proxy
         run: |
           curl -fsSL -o /tmp/gost.tar.gz "https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_linux_amd64.tar.gz"
           cd /tmp && tar xzf gost.tar.gz
           chmod +x /tmp/gost
-          nohup /tmp/gost -L http://:8080 -F "$PROXY" > /tmp/gost.log 2>&1 &
+          nohup /tmp/gost -L http://:8080 -F "${{ secrets.PROXY }}" > /tmp/gost.log 2>&1 &
           sleep 3
           curl -x http://127.0.0.1:8080 -s "http://ip-api.com/json" | jq '.query, .country'
-      - run: xvfb-run python minet_coin.py
+        env:
+          PROXY: ${{ secrets.PROXY }}
+
+      - name: Run miner
+        run: xvfb-run python minet_coin.py
         env:
           DISPLAY: ':99.0'
           PROXY: 'http://127.0.0.1:8080'
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CF_CLEARANCE: ${{ secrets.CF_CLEARANCE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ACCOUNT_NAME: 'btpp03'
+          MAX_ADS: '20'
