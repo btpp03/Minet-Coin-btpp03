@@ -137,12 +137,15 @@ def login(sb):
     if PROXY:
         print(f"[login] Using proxy: {PROXY[:30]}...")
     
-    # 先注入 CF clearance cookie（如果有）
-    if CF_CLEARANCE:
-        inject_cf_cookies(sb)
-    
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
     time.sleep(10)
+    
+    # 先在目标域名上注入 CF clearance cookie（如果有）
+    if CF_CLEARANCE:
+        if inject_cf_cookies(sb):
+            time.sleep(2)
+            sb.execute_script("location.reload();")
+            time.sleep(8)
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
