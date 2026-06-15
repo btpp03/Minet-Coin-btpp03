@@ -208,11 +208,36 @@ def login(sb):
             save_debug(sb, "minet_login_no_discord_button")
             return False
         
+        # Pre-click: dismiss any existing alerts so click can register
+        dismiss_alerts(sb)
+        
         discord_btn.click()
         time.sleep(10)
         
-        # If alert popped up after click, dismiss and retry
-        dismiss_alerts(sb)
+        # If alert popped up after click, dismiss and retry clicking
+        try:
+            alert = sb.driver.switch_to.alert
+            text = alert.text
+            print(f"[alert] Alert after Discord click: {text[:80]}")
+            alert.dismiss()
+            time.sleep(3)
+            
+            # Re-find and click Discord button (the click was blocked by alert)
+            print("[login] Re-finding Discord button after alert dismiss...")
+            dismiss_alerts(sb)  # Make sure no alerts open
+            
+            btns = sb.find_elements("button, a")
+            for b in btns:
+                text_b = b.text.lower()
+                if "discord" in text_b:
+                    print(f"[login] Re-clicking: {b.text}")
+                    b.click()
+                    time.sleep(10)
+                    break
+            dismiss_alerts(sb)  # Catch any new alerts
+        except Exception as e:
+            # No alert - normal flow
+            pass
         
         url = sb.driver.current_url
         print(f"[login] After click: {url[:80]}")
