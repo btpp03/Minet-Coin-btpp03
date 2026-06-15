@@ -1,0 +1,30 @@
+name: Minet Login Streak (HTTP)
+
+on:
+  schedule:
+    # Run daily at 00:07 UTC (after midnight) - Minet tz is Asia/Ho_Chi_Minh (UTC+7)
+    # 00:07 UTC = 07:07 ICT
+    - cron: '7 0 * * *'
+    # Also at 12:07 UTC to catch midnight rollover
+    - cron: '7 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  streak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run streak claim
+        env:
+          SESSION_COOKIE: ${{ secrets.SESSION_COOKIE }}
+          PROXY: ${{ secrets.PROXY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ACCOUNT_NAME: 'btpp03'
+        run: python minet_streak.py
