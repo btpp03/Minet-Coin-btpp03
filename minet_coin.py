@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Minet.vn Auto Coin - UC mode + Discord OAuth + proxy
-修复: 验证登录成功、添加详细调试、重试逻辑
+策略: 不用 CF_CLEARANCE (cookie IP 不匹配会弹 alert), 
+      靠 uc_open_with_reconnect + alert dismiss + retry
 """
 import os, re, json, time, random, urllib.request, sys
 from seleniumbase import SB
@@ -13,7 +14,8 @@ MAX_ADS = int(os.environ.get("MAX_ADS", "20"))
 MINET_BASE = "https://dashboard.minet.vn"
 ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "btpp03")
 PROXY = os.environ.get("PROXY", "")
-CF_CLEARANCE = os.environ.get("CF_CLEARANCE", "")
+# CF_CLEARANCE not used - causes IP mismatch alert
+CF_CLEARANCE = ""
 
 def notify(text):
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
@@ -47,79 +49,54 @@ def save_debug(sb, name):
         print(f"[debug] text dump failed: {e}")
     print(f"[debug] Saved /tmp/{name}.png/.html/.txt")
 
-def wait_page_load(sb, max_wait=90):
-    """等待页面真正加载（不只是 CF 验证通过）"""
+def dismiss_alerts(sb, max_attempts=3):
+    """Dismiss any open alerts (CF 'complete verification' etc)"""
+    for i in range(max_attempts):
+        try:
+            alert = sb.driver.switch_to.alert
+            text = alert.text
+            print(f"[alert] Dismissing alert: {text[:80]}")
+            alert.dismiss()
+            time.sleep(1)
+        except Exception:
+            # No alert open
+            return True
+    return False
+
+def wait_page_load(sb, max_wait=120):
+    """等待页面真正加载。轮询 + alert dismiss"""
     print("[wait] Waiting for page to fully load...")
     for i in range(max_wait // 3):
         time.sleep(3)
+        
+        # Dismiss any open alerts (CF "complete verification" popups)
+        dismiss_alerts(sb)
+        
         url = sb.driver.current_url
         try:
             body = sb.get_text("body")[:500]
         except:
             body = ""
         
-        # 检查页面是否有实际内容（不只是域名）
+        # 加载成功的判断
         if len(body) > 50 and \
            "security verification" not in body.lower() and \
            "just a moment" not in body.lower() and \
            "checking" not in body.lower() and \
            "waiting for" not in body.lower() and \
-           "this site can't be reached" not in body.lower() and \
-           "this site can't be reached" not in body.lower() and \
            "site can't be reached" not in body.lower() and \
-           "err_" not in body.lower():
+           "err_" not in body.lower() and \
+           "performing security" not in body.lower():
             print(f"[wait] ✅ Page loaded! URL: {url[:60]}")
             print(f"[wait] Content: {body[:200]}")
             return True
         
         if i % 10 == 0:
             print(f"[wait] Waiting... ({i*3}s) URL: {url[:60]}")
-            print(f"[wait] Body: {body[:200]}")
+            print(f"[wait] Body: {body[:150]}")
     
     print("[wait] ❌ Page load timeout")
     return False
-
-def inject_cf_cookies(sb):
-    """注入 CloudFlare clearance cookie - 修复 invalid cookie domain 错误"""
-    if not CF_CLEARANCE:
-        print("[cf] No CF_CLEARANCE provided, skipping")
-        return False
-    try:
-        # Fix: ensure we're on the target domain before adding cookies
-        # Otherwise Selenium raises "invalid cookie domain"
-        current_url = sb.driver.current_url
-        if "minet.vn" not in current_url:
-            print(f"[cf] Current URL is not on minet.vn ({current_url[:60]}), navigating first...")
-            sb.open(MINET_BASE)
-            time.sleep(5)
-        
-        # Use exact domain (no leading dot) - works better with Chrome
-        sb.driver.add_cookie({
-            "name": "cf_clearance",
-            "value": CF_CLEARANCE,
-            "domain": "dashboard.minet.vn",
-            "path": "/"
-        })
-        print(f"[cf] ✅ Injected cf_clearance cookie (domain=dashboard.minet.vn)")
-        return True
-    except Exception as e:
-        print(f"[cf] ❌ Failed to inject: {e}")
-        # Try alternative: navigate to a page on the domain, then add cookie
-        try:
-            print("[cf] Retrying after explicit navigation...")
-            sb.open("https://dashboard.minet.vn/")
-            time.sleep(3)
-            sb.driver.add_cookie({
-                "name": "cf_clearance",
-                "value": CF_CLEARANCE,
-                "domain": ".minet.vn",
-                "path": "/"
-            })
-            print(f"[cf] ✅ Injected cf_clearance cookie (domain=.minet.vn)")
-            return True
-        except Exception as e2:
-            print(f"[cf] ❌ Retry also failed: {e2}")
-            return False
 
 def verify_login(sb):
     """验证是否真的登录了（不只是 URL 正确）"""
@@ -128,12 +105,10 @@ def verify_login(sb):
         body = sb.get_text("body")[:1000].lower()
         url = sb.driver.current_url.lower()
         
-        # 检查页面是否有登录相关的元素
         if "discord" in body and ("login" in url or "sign in" in body):
             print("[verify] ❌ Still on login page")
             return False
         
-        # 检查是否有用户信息/余额/积分等登录后才有的内容
         logged_in_indicators = ["coin", "balance", "point", "earn", "dashboard", "logout", "sign out"]
         found = [x for x in logged_in_indicators if x in body]
         print(f"[verify] Logged in indicators found: {found}")
@@ -160,7 +135,7 @@ def verify_login(sb):
         return False
 
 def login(sb):
-    """使用代理 + Discord OAuth"""
+    """使用代理 + Discord OAuth, 让 UC mode 自己处理 CF challenge"""
     print(f"[login] Starting login process...")
     print(f"[login] Discord token: {'✅ SET' if DISCORD_TOKEN else '❌ NOT SET'}")
     if not DISCORD_TOKEN:
@@ -170,17 +145,13 @@ def login(sb):
     if PROXY:
         print(f"[login] Using proxy: {PROXY[:30]}...")
     
-    # Step 1: Open the site first (reconnect handles CF challenges)
-    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
-    time.sleep(10)
+    # Open with reconnect - UC mode handles Turnstile challenges automatically
+    # reconnect_time=60 gives CF enough time to auto-pass
+    sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=60)
+    time.sleep(15)
     
-    # Step 2: Inject CF clearance cookie AFTER we're on the right domain
-    # This avoids "invalid cookie domain" error
-    if CF_CLEARANCE:
-        if inject_cf_cookies(sb):
-            time.sleep(2)
-            sb.execute_script("location.reload();")
-            time.sleep(8)
+    # Dismiss any alerts that may have appeared during challenge
+    dismiss_alerts(sb)
     
     url = sb.driver.current_url
     print(f"[login] URL: {url[:80]}")
@@ -192,9 +163,14 @@ def login(sb):
     
     # 等页面加载
     if not wait_page_load(sb):
-        print("[login] Page load timeout, retrying...")
-        sb.execute_script("location.reload();")
-        time.sleep(15)
+        print("[login] Page load timeout, retrying with reload...")
+        # Try one more reload + wait
+        try:
+            sb.execute_script("location.reload();")
+            time.sleep(20)
+            dismiss_alerts(sb)
+        except:
+            pass
         if not wait_page_load(sb):
             save_debug(sb, "minet_page_load_timeout")
             notify(f"❌ [{ACCOUNT_NAME}] Page load timeout")
@@ -206,6 +182,9 @@ def login(sb):
     # 点 Discord 登录
     print("[login] Looking for Discord login button...")
     try:
+        # Dismiss alerts first
+        dismiss_alerts(sb)
+        
         discord_btn = None
         btns = sb.find_elements("button, a")
         for b in btns:
@@ -226,34 +205,43 @@ def login(sb):
         
         if not discord_btn:
             print("[login] ❌ Discord button not found")
-            # 截图看看页面是什么
             save_debug(sb, "minet_login_no_discord_button")
             return False
         
         discord_btn.click()
-        time.sleep(8)
+        time.sleep(10)
+        
+        # If alert popped up after click, dismiss and retry
+        dismiss_alerts(sb)
         
         url = sb.driver.current_url
         print(f"[login] After click: {url[:80]}")
         
         if "discord" in url.lower():
             print("[login] On Discord page, injecting token...")
-            # 注入 Discord token 到 localStorage
             sb.execute_script(f"window.localStorage.setItem('token', '{DISCORD_TOKEN}');")
             time.sleep(2)
             sb.execute_script("location.reload();")
             time.sleep(8)
+            dismiss_alerts(sb)
             
             url = sb.driver.current_url
             print(f"[login] After reload: {url[:80]}")
     
     except Exception as e:
         print(f"[login] Error during Discord click: {e}")
-        notify(f"❌ [{ACCOUNT_NAME}] Discord login error: {e}")
+        # Check if it's an alert issue
+        if "alert" in str(e).lower():
+            print("[login] Alert issue, trying to dismiss and retry...")
+            dismiss_alerts(sb)
+            notify(f"❌ [{ACCOUNT_NAME}] Alert blocked Discord click: {e}")
+        else:
+            notify(f"❌ [{ACCOUNT_NAME}] Discord login error: {e}")
         return False
     
     # 等待页面稳定
     time.sleep(5)
+    dismiss_alerts(sb)
     
     # 验证登录
     if verify_login(sb):
@@ -284,6 +272,7 @@ def watch_ad(sb, idx):
             return False
         
         time.sleep(3)
+        dismiss_alerts(sb)
         
         try:
             body_text = sb.get_text("body")[:500]
@@ -303,7 +292,6 @@ def watch_ad(sb, idx):
             time.sleep(3)
         else:
             print(f"[ad {idx}] #link4mBtn not found, trying other selectors...")
-            # 尝试其他按钮
             all_btns = sb.find_elements("button, a")
             for b in all_btns:
                 text = b.text.lower()
@@ -320,6 +308,7 @@ def watch_ad(sb, idx):
         print(f"[ad {idx}] Waiting for claim button...")
         for i in range(90):
             time.sleep(1)
+            dismiss_alerts(sb)  # Handle any CF alerts during ad
             btns = sb.find_elements("button")
             for b in btns:
                 if "claim" in b.text.lower():
@@ -342,7 +331,7 @@ def run():
     print(f"\n{'='*50}")
     print(f"Minet.vn Auto Coin ({ACCOUNT_NAME})")
     print(f"DISCORD_TOKEN: {'✅' if DISCORD_TOKEN else '❌'}")
-    print(f"CF_CLEARANCE: {'✅' if CF_CLEARANCE else '❌'}")
+    print(f"CF_CLEARANCE: ❌ (disabled, was causing IP mismatch alert)")
     print(f"PROXY: {'✅' if PROXY else '❌'}")
     print(f"{'='*50}\n")
     
