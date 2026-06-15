@@ -63,7 +63,11 @@ def wait_page_load(sb, max_wait=90):
            "security verification" not in body.lower() and \
            "just a moment" not in body.lower() and \
            "checking" not in body.lower() and \
-           "waiting for" not in body.lower():
+           "waiting for" not in body.lower() and \
+           "this site can't be reached" not in body.lower() and \
+           "this site can't be reached" not in body.lower() and \
+           "site can't be reached" not in body.lower() and \
+           "err_" not in body.lower():
             print(f"[wait] ✅ Page loaded! URL: {url[:60]}")
             print(f"[wait] Content: {body[:200]}")
             return True
@@ -76,17 +80,46 @@ def wait_page_load(sb, max_wait=90):
     return False
 
 def inject_cf_cookies(sb):
-    """注入 CloudFlare clearance cookie"""
+    """注入 CloudFlare clearance cookie - 修复 invalid cookie domain 错误"""
     if not CF_CLEARANCE:
         print("[cf] No CF_CLEARANCE provided, skipping")
         return False
     try:
-        sb.driver.add_cookie({"name": "cf_clearance", "value": CF_CLEARANCE, "domain": ".minet.vn", "path": "/"})
-        print(f"[cf] ✅ Injected cf_clearance cookie")
+        # Fix: ensure we're on the target domain before adding cookies
+        # Otherwise Selenium raises "invalid cookie domain"
+        current_url = sb.driver.current_url
+        if "minet.vn" not in current_url:
+            print(f"[cf] Current URL is not on minet.vn ({current_url[:60]}), navigating first...")
+            sb.open(MINET_BASE)
+            time.sleep(5)
+        
+        # Use exact domain (no leading dot) - works better with Chrome
+        sb.driver.add_cookie({
+            "name": "cf_clearance",
+            "value": CF_CLEARANCE,
+            "domain": "dashboard.minet.vn",
+            "path": "/"
+        })
+        print(f"[cf] ✅ Injected cf_clearance cookie (domain=dashboard.minet.vn)")
         return True
     except Exception as e:
         print(f"[cf] ❌ Failed to inject: {e}")
-        return False
+        # Try alternative: navigate to a page on the domain, then add cookie
+        try:
+            print("[cf] Retrying after explicit navigation...")
+            sb.open("https://dashboard.minet.vn/")
+            time.sleep(3)
+            sb.driver.add_cookie({
+                "name": "cf_clearance",
+                "value": CF_CLEARANCE,
+                "domain": ".minet.vn",
+                "path": "/"
+            })
+            print(f"[cf] ✅ Injected cf_clearance cookie (domain=.minet.vn)")
+            return True
+        except Exception as e2:
+            print(f"[cf] ❌ Retry also failed: {e2}")
+            return False
 
 def verify_login(sb):
     """验证是否真的登录了（不只是 URL 正确）"""
@@ -137,10 +170,12 @@ def login(sb):
     if PROXY:
         print(f"[login] Using proxy: {PROXY[:30]}...")
     
+    # Step 1: Open the site first (reconnect handles CF challenges)
     sb.uc_open_with_reconnect(MINET_BASE, reconnect_time=30)
     time.sleep(10)
     
-    # 先在目标域名上注入 CF clearance cookie（如果有）
+    # Step 2: Inject CF clearance cookie AFTER we're on the right domain
+    # This avoids "invalid cookie domain" error
     if CF_CLEARANCE:
         if inject_cf_cookies(sb):
             time.sleep(2)
