@@ -2,11 +2,16 @@ name: Minet Login Streak (HTTP)
 
 on:
   schedule:
-    # Run daily at 00:07 UTC (after midnight) - Minet tz is Asia/Ho_Chi_Minh (UTC+7)
-    # 00:07 UTC = 07:07 ICT
+    # Multiple times per day for redundancy (GitHub cron can be delayed/missed)
+    # Minet tz: Asia/Ho_Chi_Minh (UTC+7)
+    # 00:07 UTC = 07:07 ICT (morning)
+    # 06:00 UTC = 13:00 ICT (afternoon)
+    # 12:07 UTC = 19:07 ICT (evening)
+    # 18:00 UTC = 01:00 ICT next day (just after midnight)
     - cron: '7 0 * * *'
-    # Also at 12:07 UTC to catch midnight rollover
+    - cron: '0 6 * * *'
     - cron: '7 12 * * *'
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 jobs:
