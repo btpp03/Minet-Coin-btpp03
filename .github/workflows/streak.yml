@@ -25,10 +25,107 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install sing-box (for hy2 proxy tunnel)
+        run: |
+          wget -qO sing-box.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.13.7/sing-box-1.13.7-linux-amd64.tar.gz
+          tar -xzf sing-box.tar.gz
+          mv sing-box-*/sing-box ./
+          chmod +x ./sing-box
+          ./sing-box version
+
+      - name: Start hy2 tunnel via sing-box → local socks5
+        env:
+          RAW_PROXY: ${{ secrets.PROXY }}
+        run: |
+          set -e
+          # If RAW_PROXY is already socks5/http, skip tunnel
+          if [[ "$RAW_PROXY" =~ ^(socks5|http|https):// ]]; then
+            echo "PROXY is plain socks5/http — no tunnel needed"
+            echo "PROXY=$RAW_PROXY" >> $GITHUB_ENV
+            exit 0
+          fi
+          
+          # Parse hysteria2:// URL
+          if [[ ! "$RAW_PROXY" =~ ^hysteria2:// ]]; then
+            echo "ERROR: unsupported PROXY protocol: $RAW_PROXY"
+            exit 1
+          fi
+          
+          # Extract components
+          # hysteria2://USER:PASS@HOST:PORT?peer=...&insecure=1&alpn=h3#tag
+          STRIPPED="${RAW_PROXY#hysteria2://}"
+          # split off fragment
+          STRIPPED="${STRIPPED%%#*}"
+          # split off query
+          NO_QUERY="${STRIPPED%%\?*}"
+          QUERY="${STRIPPED#*\?}"
+          # parse user@host:port
+          AUTH_HOST="${NO_QUERY%@*}"
+          HOSTPORT="${NO_QUERY##*@}"
+          USER="${AUTH_HOST%:*}"
+          PASS="${AUTH_HOST#*:}"
+          HOST="${HOSTPORT%:*}"
+          PORT="${HOSTPORT#*:}"
+          
+          # query params
+          PEER=$(echo "$QUERY" | tr '&' '\n' | grep '^peer=' | sed 's/^peer=//')
+          INSECURE=$(echo "$QUERY" | tr '&' '\n' | grep '^insecure=' | sed 's/^insecure=//')
+          ALPN=$(echo "$QUERY" | tr '&' '\n' | grep '^alpn=' | sed 's/^alpn=//')
+          
+          PEER="${PEER:-www.bing.com}"
+          INSECURE_FLAG=""
+          [[ "$INSECURE" == "1" ]] && INSECURE_FLAG='"insecure": true,'
+          
+          cat > config.json <<EOF
+          {
+            "log": {"level": "warn"},
+            "inbounds": [
+              {
+                "type": "socks",
+                "tag": "socks-in",
+                "listen": "127.0.0.1",
+                "listen_port": 1080
+              }
+            ],
+            "outbounds": [
+              {
+                "type": "hysteria2",
+                "tag": "hy2-out",
+                "server": "${HOST}",
+                "server_port": ${PORT},
+                "password": "${PASS}",
+                "tls": {
+                  "enabled": true,
+                  "server_name": "${PEER}",
+                  "alpn": ["${ALPN:-h3}"],
+                  ${INSECURE_FLAG}
+                  "utls": {
+                    "enabled": true,
+                    "fingerprint": "chrome"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+          
+          ./sing-box run -c config.json &
+          SING_PID=$!
+          echo "sing-box started, pid=$SING_PID"
+          sleep 3
+          
+          # Test
+          curl -sS --socks5 127.0.0.1:1080 https://api.ipify.org
+          echo ""
+          
+          # Point PROXY to local tunnel
+          echo "PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+          echo "Tunnel active: hy2 → local socks5:1080"
+
       - name: Run streak claim
         env:
           SESSION_COOKIE: ${{ secrets.SESSION_COOKIE }}
-          PROXY: ${{ secrets.PROXY }}
+          PROXY: ${{ env.PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACCOUNT_NAME: 'btpp03'
