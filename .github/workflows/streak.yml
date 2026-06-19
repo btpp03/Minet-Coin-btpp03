@@ -99,11 +99,7 @@ jobs:
                   "server_name": "${PEER}",
                   "alpn": ["${ALPN:-h3}"],
                   ${INSECURE_FLAG}
-                  "utls": {
-                    "enabled": true,
-                    "fingerprint": "chrome"
                   }
-                }
               }
             ]
           }
