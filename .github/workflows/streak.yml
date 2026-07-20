@@ -8,10 +8,7 @@ on:
     # 06:00 UTC = 13:00 ICT (afternoon)
     # 12:07 UTC = 19:07 ICT (evening)
     # 18:00 UTC = 01:00 ICT next day (just after midnight)
-    - cron: '7 0 * * *'
-    - cron: '0 6 * * *'
-    - cron: '7 12 * * *'
-    - cron: '0 18 * * *'
+    - cron: '7 0 * * *'  # Once daily at 00:07 UTC (08:07 ICT)
   workflow_dispatch:
 
 jobs:
