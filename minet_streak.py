@@ -133,17 +133,19 @@ def main():
         delta_streak = new_streak - info.get("currentStreak", 0)
         delta_coins = new_total - info.get("totalRewards", 0)
         
-        if not can2 and delta_streak >= 0 and delta_coins > 0:
+        if not can2 and delta_coins > 0:
+            streak_note = ""
+            if delta_streak < 0:
+                streak_note = f"\n⚠️ Streak reset (was {info.get('currentStreak')}d, now {new_streak}d — missed a day)"
             msg = f"""[{ACCOUNT_NAME}] Minet Login Streak ✅
-🎯 Claimed +{info.get('nextReward', 10)} coins
-📅 Streak: {info.get('currentStreak')}d → {new_streak}d (best {info2.get('longestStreak')}d)
-💰 Total rewards: {info.get('totalRewards')} → {new_total} coins
-🏆 Next milestone: {info2.get('milestones', [None])[0]} days"""
+🎯 Claimed +{delta_coins} coins
+📅 Streak: {info.get('currentStreak')}d → {new_streak}d (best {info2.get('longestStreak')}d){streak_note}
+💰 Total rewards: {info.get('totalRewards')} → {new_total} coins"""
             log(f"✅ Claimed! +{delta_coins} coins, streak {info.get('currentStreak')} → {new_streak}")
             notify(msg)
             return EXIT_OK
         else:
-            msg = f"❌ [{ACCOUNT_NAME}] Claim verification failed. Before: {info.get('currentStreak')}d/{info.get('totalRewards')}c, After: {new_streak}d/{new_total}c, canClaim={can2}"
+            msg = f"❌ [{ACCOUNT_NAME}] Claim failed. Before: {info.get('currentStreak')}d/{info.get('totalRewards')}c, After: {new_streak}d/{new_total}c, canClaim={can2}, delta_coins={delta_coins}"
             log(msg)
             notify(msg)
             return EXIT_API_FAIL
