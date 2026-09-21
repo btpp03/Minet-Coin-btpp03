@@ -64,16 +64,25 @@ def log(m):
     print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {m}", flush=True)
 
 def get_streak_info():
-    """GET /api/streak/info"""
-    body, _ = run_curl([
-        "-H", f"Cookie: connect.sid={SESSION_COOKIE}",
-        f"{MINET_BASE}/api/streak/info"
-    ])
-    try:
-        return json.loads(body)
-    except:
-        log(f"Streak info parse fail: {body[:200]}")
-        return None
+    """GET /api/streak/info with safe diagnostics and retries."""
+    for attempt in range(1, 4):
+        body, rc = run_curl([
+            "-H", f"Cookie: connect.sid={SESSION_COOKIE}",
+            "-w", "\n__HTTP__:%{http_code}|%{url_effective}|%{time_total}",
+            f"{MINET_BASE}/api/streak/info"
+        ])
+        marker = "\n__HTTP__:"
+        payload, meta = (body.rsplit(marker, 1) + [""])[:2] if marker in body else (body, "")
+        log(f"Streak info attempt {attempt}/3: curl_rc={rc}, http={meta or 'n/a'}, bytes={len(payload)}")
+        try:
+            return json.loads(payload)
+        except Exception:
+            # Never print cookies; response body is truncated and normally empty/HTML.
+            preview = payload[:160].replace("\n", " ")
+            log(f"Streak info parse fail: {preview!r}")
+        if attempt < 3:
+            time.sleep(attempt * 5)
+    return None
 
 def claim_streak():
     """GET /api/streak/claim - returns 302 redirect to /dashboard"""
